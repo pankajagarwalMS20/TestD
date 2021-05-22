@@ -1,0 +1,96 @@
+All the new files related to this new functionality should be in package 
+com.de.project.eform.agile.prgdashboard
+	class : AgilePrgDashboardService,Manager,Bean,Sql 
+			webhelper >> AgilePrgDashboardJSONHelper
+			dataobject >> AgilePrgDashboardData with following getter setter
+							ItemName, ItemId, ItemType, 
+							plannedStartDate, PlannedEndDate, 
+							actualStartDate, ActualEndDate,
+							predictedEndDate,
+							percentcomplete,
+							spilloverPercent,
+							Arraylist<AgilePrgDashboardData>
+			
+			queries >> agileprgdashboard_queries.xml
+
+
+Case1 : 
+When normal cardtype is selected and its any of the single item is selected.
+	1. get the itemhierarchydata of single item, and check if entry is present in hierarchy table.
+	2. if entry not present in hierarchy table, get all required data from edfi left join projectrelease left join sprintmaster for single edfi_id
+	3. if entry is present in hierarchy table get all required data from hierarchyrelationship left join edfi left join projectrelease left join sprintmaster of all the children order hierarcycode
+	
+	ItemName, ItemId, itemType, plannedStartDate, plannedEndDate, actualStartDate, closeddate, sprintstartdate, sprintendDate, releasestartDate, releaseEndDate, percentComplete
+	fill the AgilePrgDashboardData dataobject with above information also add proper child in childrens list as done in hierarchy.
+	
+case 2 : 
+When delivery cadence card is selected (release or sprint)
+	1. get all required information like ItemName, ItemId, itemType, releasestartdate, releaseenddate for selected Release using projectrelease and edfi table. and set it in AgilePrgDashboardData dataobject.
+	2. Now get same information for all the sprints tagged to above selected release using sprintmaster and edfi table 
+	and set each sprint data it in AgilePrgDashboardData... 
+		maintain that against hashmap of sprintId Vs AgilePrgDashboardData SprintIDVsTimelineMap
+		
+	3. get distinct itemtype of all the items tagged to this release.
+	4. for all the distinct itemTypes check for partitioned table and fire individual query for each itemType.
+	5. For all the itemTypes which are not having different partitioned table, get full data in single query for all such itemtypes with inclause.
+	6. loop through each resultset and 
+		create the AgilePrgDashboardData for each item, 
+		check the sprintId of current Record and then add it in childList of AgilePrgDashboardData of this sprint in SprintIDVsTimelineMap.
+		
+	
+	7. Also in a similar manner maintain hashmap of sprintIdVsRolledUpvalesMap which will have SprintId Vs arrayList which will hold 3 values which needs to be rolled up, ActualStartDate, ActualEndDate, PercentComplete.
+	
+		ActualStartDate of sprint should be minimum of actualStartDate of all items of that sprint.
+		ActualEndDate of sprint should be max of actualEndDate of all items of that sprint.
+		percentComplete of srptint should be avg of PercentComplete of all items of that sprint.
+		And finally with all this data filled up, add all these sprint's AgilePrgDashboardData from SprintIDVsTimelineMap into top release's AgilePrgDashboardData.
+	
+	
+	8. Similarly, we also need to maintain three variable for calculating rollup of these 3 values at top release level
+		ActualStartDate of Relese should be minimum of actualStartDate of all items tagged to this relese.
+		ActualEndDate of Relese should be max of actualEndDate of all items tagged to this relese.
+		percentComplete of Relese should be avg of PercentComplete of all items tagged to this relese.
+	
+	
+	
+For Both the above cases while setting planned dates, predicted date, and spillover percent below logic should be used
+
+	a. AgilePrgDashboardData's plannedstartdate and plannedenddate setting logic for individual Item:
+	{	
+		check plannedStartDate, plannedEndDate fetched from DB
+		if any one of the date is present.
+			set plannedStartDate, plannedEndDate in the dataobject's planned start and end date.
+		else if both dates are not present, 
+		{
+			check for sprintstartdate, sprintendDate fetched from DB
+			if any one of the sprint date is present.
+				set sprintstartdate, sprintendDate in the dataobject's planned start and end date.
+			else if both dates are not present
+				set releasestartDate, releaseEndDate in the dataobject's planned start and end date.
+		}
+	}
+	b. AgilePrgDashboardData's predictedEndDate setting logic for individual Item:
+	{
+		if (ActualStartDate is not null PercentComplete of current AgilePrgDashboardData is above 25 % and not 100%: Eg.60% )
+		{
+			First calculate w_elapsedDays = currentDate - ActualStartDate 
+			So, if 70% of work is done in w_elapsedDays, how many days it will take to complete remaining 40%
+			eg : 
+			60% done in 75 days
+			40% done in x days 
+			so, x= (40 * 75) / 60 = 50 days
+			
+			So, predictedDate will be = (currentDate - 1) + 50days
+		}
+		else predictedEnddate will not be there (null)
+		
+	}
+	c. AgilePrgDashboardData's spilloverPercent setting logic for individual Item:
+	{
+		For a closed card, No. of days Delayed = Actual End Date - Planned End Date 
+        For a open card, No. of days delayed = Predicted End Date - Planned End Date    
+        The formula for slippage is:
+        No. of days delayed/Planned Duration of the Agile Workitem X 100 = (25/100) X 100 = 25%
+	}
+
+	
